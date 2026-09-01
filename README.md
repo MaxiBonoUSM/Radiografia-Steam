@@ -1,7 +1,5 @@
 Radiografía de Steam: características de publicación y recepción de videojuegos (2014 a 2024)
 
-Proyecto de la asignatura **EIN092B Visualización** (2026-II). Avance 1: Formulación del proyecto.
-
 Integrantes
 
 - Maximiliano Bono

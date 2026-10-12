@@ -40,45 +40,120 @@ def resolver_columnas(df: pd.DataFrame) -> dict:
     return mapa
 
 
-def cargar_crudo(ruta: Path | str | None = None) -> pd.DataFrame:
-    """Lee el archivo original sin transformar.
+# Columnas de texto extenso o de enlaces que no aportan a la pregunta. Se omiten
+# al leer para reducir el uso de memoria (el archivo completo pesa cerca de 400 MB).
+COLUMNAS_OMITIDAS = {
+    "About the game", "detailed_description", "short_description", "Reviews",
+    "reviews", "Header image", "header_image", "Website", "website",
+    "Support url", "support_url", "Support email", "support_email",
+    "Metacritic url", "metacritic_url", "Notes", "notes", "Screenshots",
+    "screenshots", "Movies", "movies",
+}
 
-    Si no se entrega una ruta, se usa la ruta por defecto definida en config.
+
+def _corregir_encabezado(nombres: list[str]) -> list[str]:
+    """Corrige el error conocido del encabezado del CSV de Fronkon Games.
+
+    En el archivo original las columnas "Discount" y "DLC count" aparecen
+    fusionadas en un solo nombre ("DiscountDLC count"). Por eso el encabezado
+    tiene un nombre menos que los valores de cada fila, y pandas desplaza todas
+    las columnas una posicion (el AppID termina como indice y, por ejemplo, la
+    columna de fecha queda con los tramos de propietarios). Se separa el nombre
+    fusionado para que encabezado y valores vuelvan a coincidir.
+    """
+    corregidos = []
+    for nombre in nombres:
+        if nombre == "DiscountDLC count":
+            corregidos.extend(["Discount", "DLC count"])
+        else:
+            corregidos.append(nombre)
+    return corregidos
+
+
+def cargar_crudo(fuente=None, solo_utiles: bool = True) -> pd.DataFrame:
+    """Lee el archivo original corrigiendo su encabezado.
+
+    La fuente puede ser una ruta o un archivo ya abierto (por ejemplo, el CSV
+    subido desde la aplicacion). Si no se entrega fuente, se usa la ruta por
+    defecto definida en config. Con solo_utiles=True se omiten las columnas de
+    texto extenso para ahorrar memoria.
+
     Lanza FileNotFoundError con un mensaje claro cuando el archivo no existe,
     para orientar a quien ejecuta el proyecto por primera vez.
     """
-    ruta = Path(ruta) if ruta is not None else config.RUTA_DATOS_RAW
-    if not Path(ruta).exists():
+    if fuente is None:
+        fuente = config.RUTA_DATOS_RAW
+    es_ruta = isinstance(fuente, (str, Path))
+    if es_ruta and not Path(fuente).exists():
         raise FileNotFoundError(
-            f"No se encontro el archivo de datos en: {ruta}\n"
+            f"No se encontro el archivo de datos en: {fuente}\n"
             "Descargue games.csv desde Kaggle o Hugging Face y coloquelo en "
             "data/raw/ (ver instrucciones en el README)."
         )
-    # low_memory=False evita advertencias de tipos mixtos en columnas de texto
-    return pd.read_csv(ruta, low_memory=False)
+
+    # Lectura previa del encabezado para detectar y corregir el desfase
+    encabezado = pd.read_csv(fuente, nrows=0).columns.tolist()
+    if not es_ruta and hasattr(fuente, "seek"):
+        fuente.seek(0)
+    nombres = _corregir_encabezado(encabezado)
+
+    usar = [n for n in nombres if not (solo_utiles and n in COLUMNAS_OMITIDAS)]
+
+    # header=0 descarta la linea original y names aplica el encabezado corregido.
+    # index_col=False impide que pandas use la primera columna como indice.
+    # low_memory=False evita advertencias de tipos mixtos en columnas de texto.
+    return pd.read_csv(
+        fuente, header=0, names=nombres, usecols=usar,
+        index_col=False, low_memory=False,
+    )
 
 
-def _contar_idiomas(valor) -> float:
-    """Cuenta cuantos idiomas soporta un juego a partir del campo de texto.
+def _parsear_fechas(serie: pd.Series) -> pd.Series:
+    """Convierte la fecha de lanzamiento a datetime.
+
+    El formato habitual del dataset es "Aug 1, 2023". Se intenta primero ese
+    formato y, para las filas que no calzan (por ejemplo "Aug 2023"), se usa una
+    interpretacion flexible. Las fechas imposibles de leer quedan como NaT.
+    """
+    texto = serie.astype("string").str.strip()
+    fecha = pd.to_datetime(texto, format="%b %d, %Y", errors="coerce")
+    faltan = fecha.isna() & texto.notna()
+    if faltan.any():
+        fecha.loc[faltan] = pd.to_datetime(
+            texto[faltan], format="mixed", errors="coerce"
+        )
+    return fecha
+
+
+def _lista_idiomas(valor) -> list[str]:
+    """Convierte el campo de idiomas en una lista de nombres.
 
     El campo suele venir como una lista en formato texto, por ejemplo
     "['English', 'French', 'Spanish - Spain']". Se intenta interpretar como
-    lista; si falla, se recurre a un conteo por comas. Devuelve NaN cuando el
-    valor esta vacio o no es interpretable.
+    lista de Python; si falla (algunos nombres traen apostrofes, como K'iche),
+    se separa por comas y se quitan las comillas. Ningun nombre de idioma de
+    Steam contiene comas, por lo que este respaldo es seguro. Devuelve una lista
+    vacia cuando el valor esta vacio.
     """
     if pd.isna(valor):
-        return np.nan
+        return []
     texto = str(valor).strip()
-    if texto == "" or texto == "[]":
-        return np.nan
+    if texto in ("", "[]"):
+        return []
     try:
         elementos = ast.literal_eval(texto)
         if isinstance(elementos, (list, tuple)):
-            return float(len([e for e in elementos if str(e).strip() != ""]))
+            return [str(e).strip() for e in elementos if str(e).strip()]
     except (ValueError, SyntaxError):
         pass
-    # Respaldo: conteo por comas
-    return float(len([p for p in texto.split(",") if p.strip() != ""]))
+    interior = texto.strip("[]")
+    return [p.strip().strip("'\"") for p in interior.split(",") if p.strip()]
+
+
+def _contar_idiomas(valor) -> float:
+    """Cuenta cuantos idiomas soporta un juego. Devuelve NaN si no declara ninguno."""
+    n = len(_lista_idiomas(valor))
+    return float(n) if n > 0 else np.nan
 
 
 def _a_booleano(serie: pd.Series) -> pd.Series:
@@ -132,7 +207,7 @@ def limpiar(df: pd.DataFrame, min_resenas: int | None = None) -> pd.DataFrame:
 
     # Fecha de lanzamiento, anio y mes
     if "fecha_lanzamiento" in cols:
-        fecha = pd.to_datetime(df[cols["fecha_lanzamiento"]], errors="coerce")
+        fecha = _parsear_fechas(df[cols["fecha_lanzamiento"]])
         datos["fecha_lanzamiento"] = fecha
         datos["anio"] = fecha.dt.year
         datos["mes"] = fecha.dt.month
@@ -145,7 +220,12 @@ def limpiar(df: pd.DataFrame, min_resenas: int | None = None) -> pd.DataFrame:
 
     # Numero de idiomas
     if "idiomas" in cols:
-        datos["n_idiomas"] = df[cols["idiomas"]].map(_contar_idiomas)
+        datos["lista_idiomas"] = df[cols["idiomas"]].map(_lista_idiomas)
+        n = datos["lista_idiomas"].map(len).astype(float)
+        datos["n_idiomas"] = n.where(n > 0)
+        # Declaraciones implausibles (todos los idiomas de la tienda marcados en
+        # bloque). No se eliminan: se identifican para mostrarlas aparte.
+        datos["idiomas_atipico"] = datos["n_idiomas"] > config.MAX_IDIOMAS_PLAUSIBLE
 
     # Soporte de sistemas operativos
     n_os = pd.Series(0, index=df.index)
@@ -165,6 +245,11 @@ def limpiar(df: pd.DataFrame, min_resenas: int | None = None) -> pd.DataFrame:
     # Genero principal (primer genero listado)
     if "generos" in cols:
         datos["generos"] = df[cols["generos"]].fillna("").astype(str)
+        # Numero de generos declarados (sirve como senal de metadatos inflados)
+        n_gen = datos["generos"].str.split(",").map(
+            lambda lista: len([g for g in lista if g.strip()])
+        )
+        datos["n_generos"] = n_gen.where(n_gen > 0)
         datos["genero_principal"] = (
             datos["generos"].str.split(",").str[0].str.strip().replace("", np.nan)
         )
@@ -182,12 +267,16 @@ def limpiar(df: pd.DataFrame, min_resenas: int | None = None) -> pd.DataFrame:
         datos["tramo_precio"] = pd.cut(
             datos["precio"],
             bins=[-0.01, 0.0, 4.99, 14.99, 29.99, np.inf],
-            labels=["Gratis", "Menos de 5", "5 a 15", "15 a 30", "Mas de 30"],
+            labels=["Gratis", "Menos de 5", "5 a 15", "15 a 30", "Más de 30"],
         )
 
     # Indicadores derivados finales
     if "pct_positivas" in datos.columns:
-        datos["bien_recibido"] = datos["pct_positivas"] >= config.UMBRAL_BIEN_RECIBIDO
+        # Queda vacio (NaN) cuando el juego no tiene resenas, para que los
+        # porcentajes se calculen solo sobre juegos que si pueden evaluarse.
+        datos["bien_recibido"] = (
+            datos["pct_positivas"] >= config.UMBRAL_BIEN_RECIBIDO
+        ).astype(float).where(datos["pct_positivas"].notna())
     if "total_resenas" in datos.columns:
         datos["sobre_umbral"] = datos["total_resenas"] >= min_resenas
 
@@ -215,9 +304,10 @@ def estadisticas_descriptivas(df: pd.DataFrame) -> pd.DataFrame:
     columnas = [c for c in ["pct_positivas", "precio", "total_resenas",
                             "n_idiomas", "playtime_mediano"] if c in df.columns]
     desc = df[columnas].describe(percentiles=[0.25, 0.5, 0.75]).T
+    desc.index = [config.ETIQUETAS.get(c, c) for c in desc.index]
     desc = desc.rename(columns={
-        "count": "conteo", "mean": "media", "std": "desv_est",
-        "min": "minimo", "25%": "p25", "50%": "mediana",
-        "75%": "p75", "max": "maximo",
+        "count": "Conteo", "mean": "Media", "std": "Desv. estándar",
+        "min": "Mínimo", "25%": "P25", "50%": "Mediana",
+        "75%": "P75", "max": "Máximo",
     })
     return desc.round(3)

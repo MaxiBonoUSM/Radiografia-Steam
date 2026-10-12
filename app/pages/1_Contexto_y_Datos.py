@@ -14,74 +14,114 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _shared import encabezado, obtener_datos, aplicar_filtros, COLORES  # noqa: E402
-from src import config, data_loading, viz  # noqa: E402
+from _shared import (  # noqa: E402
+    encabezado, obtener_datos, obtener_calidad, aplicar_filtros, grafico,
+    interpretacion, pct, num,
+)
+from src import config, viz  # noqa: E402
 
-st.set_page_config(page_title="Contexto y Datos", page_icon="chart", layout="wide")
-
-encabezado("1. Contexto y Datos", "Que estamos estudiando y con que datos")
+encabezado("1. Contexto y Datos", "¿Qué estamos estudiando y con qué datos?")
 
 datos = obtener_datos()
 if datos is None:
     st.stop()
 
 datos_f = aplicar_filtros(datos)
+if datos_f.empty:
+    st.warning("Los filtros actuales no dejan juegos. Amplíe los rangos del panel lateral.")
+    st.stop()
 
 # Indicadores generales
 st.subheader("Indicadores generales")
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Juegos (filtrados)", f"{len(datos_f):,}".replace(",", "."))
-if "anio" in datos_f:
-    c2.metric("Periodo", f"{int(datos_f['anio'].min())} a {int(datos_f['anio'].max())}")
-if "pct_positivas" in datos_f:
-    med = datos_f["pct_positivas"].median()
-    c3.metric("Mediana de resenas positivas", f"{med:.0%}" if med == med else "s/d")
-if "bien_recibido" in datos_f:
-    tasa = datos_f["bien_recibido"].mean()
-    c4.metric("Juegos bien recibidos", f"{tasa:.0%}" if tasa == tasa else "s/d",
-              help=f"Al menos {config.UMBRAL_BIEN_RECIBIDO:.0%} de resenas positivas")
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("Juegos (filtrados)", num(len(datos_f)))
+c2.metric("Con al menos una reseña", num(datos_f["pct_positivas"].notna().sum()),
+          help="Solo estos juegos tienen proporción de reseñas positivas.")
+c3.metric("Periodo", f"{int(datos_f['anio'].min())}-{int(datos_f['anio'].max())}")
+c4.metric("Mediana de reseñas positivas", pct(datos_f["pct_positivas"].median()))
+c5.metric("Juegos bien recibidos", pct(datos_f["bien_recibido"].mean()),
+          help=f"Al menos {config.UMBRAL_BIEN_RECIBIDO:.0%} de reseñas positivas, "
+               "sobre los juegos con reseñas")
 
 st.divider()
 
 # Estructura y calidad de los datos
 st.subheader("Estructura y calidad de los datos")
-st.markdown(
-    """
-El dataset trae un juego por fila. Antes de analizar, se revisaron los problemas
-tipicos de calidad. Las decisiones de limpieza aplicadas fueron:
 
-- **Cobertura temporal:** se parseo la fecha de lanzamiento y se acoto la ventana
-  a 2014 a 2024. Las fechas no interpretables se marcaron como faltantes.
-- **Indicador de recepcion:** se construyo la proporcion de resenas positivas
-  como positivas sobre el total. Es indefinida cuando el juego no tiene resenas.
-- **Umbral de resenas:** la proporcion es poco confiable con muy pocas resenas,
-  por lo que se agrego un umbral minimo ajustable desde el panel lateral.
-- **Campos de multiples valores:** generos, categorias e idiomas se procesaron
-  para extraer el genero principal, las funcionalidades comunitarias y el conteo
-  de idiomas.
+calidad, filas_crudo = obtener_calidad()
+sin_resenas = int((datos["total_resenas"] == 0).sum())
+idiomas_atip = int(datos["idiomas_atipico"].sum())
+playtime_registrado = (datos["playtime_mediano"] > 0).mean()
+GENEROS_SOFTWARE = {
+    "Utilities", "Design & Illustration", "Animation & Modeling", "Video Production",
+    "Audio Production", "Software Training", "Web Publishing", "Photo Editing",
+    "Education", "Accounting", "Game Development",
+}
+solo_software = int(datos["generos"].fillna("").str.split(",").map(
+    lambda lista: {g.strip() for g in lista if g.strip()}
+).map(lambda gs: bool(gs) and gs <= GENEROS_SOFTWARE).sum())
+st.markdown(
+    f"""
+El archivo original tiene **{num(filas_crudo or 0)} juegos** (un juego por fila). Tras
+acotar a 2014 a 2024 quedan **{num(len(datos))}**, de los cuales **{num(sin_resenas)}**
+({pct(sin_resenas / len(datos))}) no tiene ninguna reseña. Problemas encontrados y
+decisiones tomadas:
+
+- **Encabezado desalineado:** el CSV original fusiona las columnas "Discount" y
+  "DLC count" en un solo nombre, lo que desplaza todos los valores una posición. Sin
+  corregirlo, la columna de fecha contiene los tramos de propietarios y ninguna
+  fecha es interpretable. La carga separa ese nombre para realinear las columnas.
+- **Cobertura temporal:** se interpreta la fecha de lanzamiento (formato "Aug 1,
+  2023") y se acota la ventana a 2014 a 2024.
+- **Indicador de recepción:** proporción de reseñas positivas sobre el total. Es
+  indefinida cuando el juego no tiene reseñas.
+- **Sin restricciones de muestra:** no se excluye ningún juego por precio ni por
+  número de reseñas. Los análisis de recepción usan automáticamente los juegos con
+  al menos una reseña, porque sin reseñas la proporción de positivas no existe. El
+  mínimo de reseñas es ajustable en el panel lateral como prueba de robustez.
+- **Campos de múltiples valores:** géneros, categorías e idiomas se procesan para
+  obtener las funcionalidades comunitarias, el número de géneros y el conteo de
+  idiomas. Como los géneros vienen casi siempre en orden alfabético, el análisis por
+  género es multietiqueta.
+- **Idiomas marcados en bloque:** {num(idiomas_atip)} juegos declaran más de 29
+  idiomas (hasta 103, es decir, todos los que permite la tienda). No se eliminan:
+  se muestran como un grupo aparte porque no reflejan una localización real.
+- **Tiempo de juego parcial:** solo el {pct(playtime_registrado)} de los juegos tiene
+  tiempo de juego registrado (el resto vale 0 porque la fuente no lo mide). Se usa
+  como información complementaria sobre ese subgrupo (página 4).
+- **Software dentro del catálogo:** {num(solo_software)} registros declaran solo
+  géneros de software (por ejemplo, Utilities o Animation & Modeling), aunque la
+  fuente dice incluir únicamente juegos. Se conservan y se pueden aislar con el
+  filtro de géneros.
+- **Columnas descartadas:** las de texto extenso (descripciones, capturas, enlaces)
+  no aportan a la pregunta y se omiten al leer.
 """
 )
 
-try:
-    calidad = data_loading.resumen_calidad(
-        data_loading.cargar_crudo(config.RUTA_DATOS_RAW)
-    )
-    st.markdown("**Valores faltantes por columna (archivo original)**")
+if calidad is not None:
+    st.markdown("**Valores faltantes por columna (archivo original, columnas utilizadas)**")
     st.dataframe(calidad, use_container_width=True, height=320)
-except FileNotFoundError:
-    st.caption(
-        "El resumen de calidad por columna del archivo original se muestra cuando "
-        "los datos se cargan desde data/raw. Con un archivo subido se omite para no "
-        "releer el archivo completo."
-    )
+    peores = calidad[calidad["pct_nulos"] > 0].head(3)
+    if not peores.empty:
+        detalle = ", ".join(f"{r.columna} ({r.pct_nulos:.0f} %)" for r in peores.itertuples())
+        interpretacion(
+            f"Las columnas con más faltantes son {detalle}. Ninguna es necesaria para "
+            "la pregunta: precio, reseñas, fecha, géneros e idiomas están casi completos."
+        )
 
 st.divider()
 
 # Contexto temporal
-st.subheader("Contexto temporal del catalogo")
-st.plotly_chart(viz.releases_por_anio(datos_f), use_container_width=True)
-st.markdown(
-    f"<p style='color:{COLORES['gris']}'>El volumen de lanzamientos permite dimensionar "
-    "la saturacion del mercado dentro del periodo analizado.</p>",
-    unsafe_allow_html=True,
-)
+st.subheader("Contexto temporal del catálogo")
+anios_sel = datos_f["anio"].agg(["min", "max"])
+catalogo = datos[datos["anio"].between(anios_sel["min"], anios_sel["max"])]
+grafico(viz.releases_por_anio(catalogo))
+conteo = catalogo.groupby("anio").size()
+if len(conteo) >= 2:
+    a0, a1 = int(conteo.index.min()), int(conteo.index.max())
+    interpretacion(
+        f"Los lanzamientos pasan de {num(conteo[a0])} en {a0} a {num(conteo[a1])} en "
+        f"{a1} (unas {conteo[a1] / conteo[a0]:.0f} veces más). Este gráfico considera "
+        "todos los juegos del periodo, con o sin reseñas, porque busca dimensionar la "
+        "saturación del mercado que motiva el proyecto."
+    )

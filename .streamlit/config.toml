@@ -1,0 +1,10 @@
+# Tema visual de la aplicacion.
+# Se fija un tema claro para que los colores del proyecto (paleta de Steam) y
+# los textos de los graficos se lean igual en cualquier equipo, aunque el
+# sistema operativo o el navegador esten en modo oscuro.
+[theme]
+base = "light"
+primaryColor = "#1C6EA4"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF3F8"
+textColor = "#1B2838"

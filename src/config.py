@@ -18,15 +18,27 @@ RUTA_DATOS_PROCESADOS = RAIZ_PROYECTO / "data" / "processed" / "games_clean.parq
 ANIO_INICIO = 2014
 ANIO_FIN = 2024
 
-# Umbral minimo de resenas para considerar robusta la proporcion de positivas.
-# La proporcion es poco confiable en juegos con muy pocas resenas, por lo que se
-# aplica este minimo como valor por defecto. En la aplicacion es ajustable.
-MIN_RESENAS_DEFECTO = 10
+# Minimo de resenas por defecto. Es 0 para no restringir la muestra: todos los
+# juegos de la ventana entran en los analisis descriptivos, y los analisis de
+# recepcion usan automaticamente los juegos con al menos una resena (sin resenas
+# la proporcion de positivas no existe). El valor es ajustable en la aplicacion.
+MIN_RESENAS_DEFECTO = 0
+
+# Minimo de resenas usado como prueba de robustez. Con muy pocas resenas la
+# proporcion de positivas toma valores extremos (un juego con una sola resena
+# tiene 0 % o 100 %), por lo que los hallazgos se contrastan con este umbral.
+MIN_RESENAS_ROBUSTEZ = 10
 
 # Umbral de "bien recibido" inspirado en los tramos de valoracion de Steam.
 # Un juego se considera bien recibido cuando al menos el 80 por ciento de sus
 # resenas son positivas.
 UMBRAL_BIEN_RECIBIDO = 0.80
+
+# Numero de idiomas principales de Steam. Algunos juegos marcan en bloque todos
+# los idiomas que permite la tienda (hasta 103), lo que no refleja una
+# localizacion real. Esos juegos no se eliminan: se identifican con una columna
+# indicadora y se muestran como un grupo aparte en el analisis de idiomas.
+MAX_IDIOMAS_PLAUSIBLE = 29
 
 # Paleta visual del proyecto (coherente con la presentacion del Avance 1)
 COLORES = {
@@ -75,11 +87,13 @@ ALIAS_COLUMNAS = {
 
 # Etiquetas legibles para mostrar en los graficos
 ETIQUETAS = {
-    "pct_positivas": "Proporcion de resenas positivas",
+    "pct_positivas": "Proporción de reseñas positivas",
     "precio": "Precio (USD)",
-    "total_resenas": "Total de resenas",
-    "n_idiomas": "Numero de idiomas soportados",
+    "total_resenas": "Total de reseñas",
+    "n_idiomas": "Número de idiomas soportados",
     "playtime_mediano": "Tiempo de juego mediano (min)",
-    "anio": "Anio de lanzamiento",
-    "genero_principal": "Genero principal",
+    "anio": "Año de lanzamiento",
+    "n_sistemas": "Número de sistemas operativos",
+    "n_generos": "Número de géneros declarados",
+    "genero_principal": "Género principal",
 }

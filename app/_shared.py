@@ -29,14 +29,16 @@ COLORES = config.COLORES
 def _cargar_desde_ruta(ruta: str, min_resenas: int):
     crudo = data_loading.cargar_crudo(ruta)
     limpio = data_loading.limpiar(crudo, min_resenas=min_resenas)
-    return limpio, data_loading.resumen_calidad(crudo), len(crudo)
+    return (limpio, data_loading.resumen_calidad(crudo), len(crudo),
+            data_loading.chequeos_calidad(crudo))
 
 
 @st.cache_data(show_spinner="Limpiando el dataset subido...")
 def _cargar_desde_subida(contenido, min_resenas: int):
     crudo = data_loading.cargar_crudo(contenido)
     limpio = data_loading.limpiar(crudo, min_resenas=min_resenas)
-    return limpio, data_loading.resumen_calidad(crudo), len(crudo)
+    return (limpio, data_loading.resumen_calidad(crudo), len(crudo),
+            data_loading.chequeos_calidad(crudo))
 
 
 def obtener_calidad():
@@ -64,14 +66,14 @@ def obtener_datos() -> pd.DataFrame | None:
             st.info("Suba el archivo games.csv para comenzar.")
             return None
         try:
-            limpio, calidad, filas = _cargar_desde_subida(archivo, config.MIN_RESENAS_DEFECTO)
+            limpio, calidad, filas, chequeos = _cargar_desde_subida(archivo, config.MIN_RESENAS_DEFECTO)
         except Exception as exc:
             st.error(f"No fue posible leer el archivo subido: {exc}")
             return None
     else:
         ruta = str(config.RUTA_DATOS_RAW)
         try:
-            limpio, calidad, filas = _cargar_desde_ruta(ruta, config.MIN_RESENAS_DEFECTO)
+            limpio, calidad, filas, chequeos = _cargar_desde_ruta(ruta, config.MIN_RESENAS_DEFECTO)
         except FileNotFoundError as exc:
             st.warning(str(exc))
             st.info("Como alternativa, cambie la fuente a 'Subir archivo CSV' en el panel lateral.")
@@ -79,6 +81,7 @@ def obtener_datos() -> pd.DataFrame | None:
 
     st.session_state["calidad"] = calidad
     st.session_state["filas_crudo"] = filas
+    st.session_state["chequeos"] = chequeos
     if limpio.empty:
         st.error(
             "La limpieza dejó 0 juegos en la ventana 2014 a 2024. Revise que el "

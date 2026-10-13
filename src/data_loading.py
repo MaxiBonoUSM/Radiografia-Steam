@@ -311,3 +311,34 @@ def estadisticas_descriptivas(df: pd.DataFrame) -> pd.DataFrame:
         "75%": "P75", "max": "Máximo",
     })
     return desc.round(3)
+
+
+def chequeos_calidad(df_crudo: pd.DataFrame) -> dict:
+    """Verificaciones de calidad sobre el archivo original.
+
+    Revisa duplicados (por AppID y por filas completas), nombres repetidos entre
+    juegos distintos, valores imposibles (precios o resenas negativos) y el rango
+    de fechas. Devuelve un diccionario con los conteos, usado en la pagina de
+    contexto y calidad.
+    """
+    cols = resolver_columnas(df_crudo)
+    res = {"filas": len(df_crudo), "columnas": df_crudo.shape[1]}
+    if "app_id" in cols:
+        res["appid_duplicados"] = int(df_crudo[cols["app_id"]].duplicated().sum())
+    res["filas_identicas"] = int(df_crudo.duplicated().sum())
+    if "nombre" in cols:
+        nombres = df_crudo[cols["nombre"]]
+        repetidos = nombres[nombres.duplicated(keep=False) & nombres.notna()]
+        res["juegos_nombre_compartido"] = int(len(repetidos))
+        res["nombres_compartidos"] = int(repetidos.nunique())
+    negativos = 0
+    for clave in ("precio", "positivas", "negativas"):
+        if clave in cols:
+            negativos += int((pd.to_numeric(df_crudo[cols[clave]], errors="coerce") < 0).sum())
+    res["valores_negativos"] = negativos
+    if "fecha_lanzamiento" in cols:
+        anios = _parsear_fechas(df_crudo[cols["fecha_lanzamiento"]]).dt.year
+        res["anio_min"] = int(anios.min())
+        res["anio_max"] = int(anios.max())
+        res["fechas_invalidas"] = int(anios.isna().sum())
+    return res

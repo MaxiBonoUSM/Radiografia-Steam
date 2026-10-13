@@ -49,6 +49,17 @@ st.divider()
 st.subheader("Estructura y calidad de los datos")
 
 calidad, filas_crudo = obtener_calidad()
+chq = st.session_state.get("chequeos") or {}
+chq_texto = (
+    f"no hay AppID repetidos ({chq.get('appid_duplicados', 's/d')}) ni filas idénticas "
+    f"({chq.get('filas_identicas', 's/d')}). {num(chq.get('juegos_nombre_compartido', 0))} "
+    f"juegos comparten nombre con otro ({num(chq.get('nombres_compartidos', 0))} nombres), "
+    "pero tienen AppID distinto: son homónimos, no duplicados, y se conservan. No hay "
+    f"precios ni reseñas negativos ({chq.get('valores_negativos', 's/d')}). Las fechas van "
+    f"de {chq.get('anio_min', 's/d')} a {chq.get('anio_max', 's/d')}; los juegos fuera de "
+    "2014 a 2024 quedan fuera del alcance. No hay cobertura espacial: la fuente no "
+    "informa la ubicación de los jugadores."
+)
 sin_resenas = int((datos["total_resenas"] == 0).sum())
 idiomas_atip = int(datos["idiomas_atipico"].sum())
 playtime_registrado = (datos["playtime_mediano"] > 0).mean()
@@ -71,6 +82,7 @@ decisiones tomadas:
   "DLC count" en un solo nombre, lo que desplaza todos los valores una posición. Sin
   corregirlo, la columna de fecha contiene los tramos de propietarios y ninguna
   fecha es interpretable. La carga separa ese nombre para realinear las columnas.
+- **Duplicados y valores imposibles:** {chq_texto}
 - **Cobertura temporal:** se interpreta la fecha de lanzamiento (formato "Aug 1,
   2023") y se acota la ventana a 2014 a 2024.
 - **Indicador de recepción:** proporción de reseñas positivas sobre el total. Es

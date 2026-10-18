@@ -1,1 +1,1 @@
-# Codigo reutilizable del proyecto (funciones de carga, limpieza y visualizacion).
+# Codigo reutilizable del proyecto (funciones de carga, limpieza y visualizacion). 

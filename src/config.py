@@ -83,6 +83,8 @@ ALIAS_COLUMNAS = {
     "dlc_count": ["DLC count", "dlc_count"],
     "recomendaciones": ["Recommendations", "recommendations"],
     "metacritic": ["Metacritic score", "metacritic_score"],
+    "idiomas_audio": ["Full audio languages", "full_audio_languages"],
+    "edad_requerida": ["Required age", "required_age"],
 }
 
 # Etiquetas legibles para mostrar en los graficos

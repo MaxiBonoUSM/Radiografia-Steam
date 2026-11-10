@@ -236,8 +236,15 @@ def limpiar(df: pd.DataFrame, min_resenas: int | None = None) -> pd.DataFrame:
     datos["n_sistemas"] = n_os
     datos["multiplataforma"] = n_os >= 2
 
+    # Idiomas con audio completo (senal de inversion en doblaje) y edad requerida
+    if "idiomas_audio" in cols:
+        datos["n_idiomas_audio"] = df[cols["idiomas_audio"]].map(_lista_idiomas).map(len)
+    if "edad_requerida" in cols:
+        datos["edad_requerida"] = pd.to_numeric(df[cols["edad_requerida"]], errors="coerce")
+
     # Funcionalidades comunitarias (a partir de Categories)
     if "categorias" in cols:
+        datos["categorias"] = df[cols["categorias"]].fillna("").astype(str)
         datos["multijugador"] = _contiene(df[cols["categorias"]], "Multi-player")
         datos["steam_workshop"] = _contiene(df[cols["categorias"]], "Steam Workshop")
         datos["comunidad"] = datos["multijugador"] | datos["steam_workshop"]

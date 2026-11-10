@@ -1,4 +1,4 @@
-# Dependencias del proyecto (Avance 2)
+# Dependencias del proyecto (Avances 2 y 3)
 # Instalar con: pip install -r requirements.txt
 
 pandas>=2.0
@@ -9,3 +9,6 @@ statsmodels>=0.14
 matplotlib>=3.7
 seaborn>=0.12
 pyarrow>=14.0
+scikit-learn>=1.4
+lightgbm>=4.0
+shap>=0.45
